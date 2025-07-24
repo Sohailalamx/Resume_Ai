@@ -1,26 +1,24 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
-import User from "../models/user.model.js"; 
-
-
+import { User } from "../models/user.model.js";
 
 const generateAccessAndRefreshToken = async (userId) => {
-  try {
-    const user = await User.findById(userId);
+    try {
+        const user = await User.findById(userId);
 
-    console.log("User found:", user);
+        // console.log("User found:", user);
 
-    const accessToken = user.generateAccessToken();
-    const refreshToken = user.generateRefreshToken();
+        const accessToken = user.generateAccessToken();
+        const refreshToken = user.generateRefreshToken();
 
-    user.refreshToken = refreshToken;
-    await user.save({ validateBeforeSave: false });
+        user.refreshToken = refreshToken;
+        await user.save({ validateBeforeSave: false });
 
-    return { accessToken, refreshToken };
-  } catch (error) {
-    throw new ApiError(500, "something went wrong while generating tokens");
-  }
+        return { accessToken, refreshToken };
+    } catch (error) {
+        throw new ApiError(500, "something went wrong while generating tokens");
+    }
 };
 
 const registerUser = asyncHandler(async (req, res) => {
@@ -30,7 +28,7 @@ const registerUser = asyncHandler(async (req, res) => {
     // create user object: create entry in database
     // remove password and refresh token from response
     // return response
-
+    // console.log("Registering user:", req.body);
     const { username, email, password } = req.body;
 
     if ([email, username, password].some((field) => field?.trim() === "")) {
@@ -40,7 +38,7 @@ const registerUser = asyncHandler(async (req, res) => {
     const existingUser = await User.findOne({
         $or: [
             { email: email.toLowerCase() },
-            { userName: username.toLowerCase() },
+            { username: username.toLowerCase() },
         ],
     });
 
@@ -49,7 +47,7 @@ const registerUser = asyncHandler(async (req, res) => {
     }
 
     const user = await User.create({
-        userName: username.toLowerCase(),
+        username: username.toLowerCase(),
         email: email.toLowerCase(),
         password,
     });
@@ -88,7 +86,10 @@ const loginUser = asyncHandler(async (req, res) => {
     }
 
     const user = await User.findOne({
-        $or: [{ username }, { email }],
+        $or: [
+            { username: username?.toLowerCase() },
+            { email: email?.toLowerCase() },
+        ],
     });
 
     if (!user) {
@@ -114,51 +115,119 @@ const loginUser = asyncHandler(async (req, res) => {
         secure: true,
     };
 
-    res.status(200)
+    return res
+        .status(200)
         .cookie("accessToken", accessToken, options)
-        .cookie("refreshToken", refreshToken, options);
-    res.json(
-        new ApiResponse(
-            200,
-            "User logged in successfully",
-            { user: logedInUser, accessToken, refreshToken }
-        )
-    );
+        .cookie("refreshToken", refreshToken, options)
+        .json(
+            new ApiResponse(200, "User logged in successfully", {
+                user: logedInUser,
+            })
+        );
 });
 
 const logoutUser = asyncHandler(async (req, res) => {
-  // remove refresh token from database
-  // clear cookies
-  // send response
+    // remove refresh token from database
+    // clear cookies
+    // send response
 
-  await User.findByIdAndUpdate(
-    req.user._id,
-    {
-      $set: { refreshToken: "" },
-    },
-    {
-      new: true,
-    }
-  );
+    await User.findByIdAndUpdate(
+        req.user._id,
+        {
+            $set: { refreshToken: "" },
+        },
+        {
+            new: true,
+        }
+    );
 
-  const options = {
-    httpOnly: true,
-    secure: true,
-  };
+    const options = {
+        httpOnly: true,
+        secure: true,
+    };
 
-  res
-    .status(200)
-    .clearCookie("accessToken", options)
-    .clearCookie("refreshToken", options)
-    .json(new ApiResponse(
-        200, 
-        "User logged out successfully",
-        null
-    ));
+    res.status(200)
+        .clearCookie("accessToken", options)
+        .clearCookie("refreshToken", options)
+        .json(new ApiResponse(200, "User logged out successfully", null));
 });
 
-export { 
-    registerUser, 
-    loginUser, 
-    logoutUser 
+const refreshAccessToken = asyncHandler(async (req, res) => {
+    // get refresh token from cookies
+    // check if refresh token exists
+    // verify refresh token
+    // generate new access token and refresh token
+    // send cookies
+
+    const incomingRefreshToken =
+        req.cookies?.refreshToken || req.body?.refreshToken;
+
+    if (!incomingRefreshToken) {
+        throw new ApiError(
+            401,
+            "unauthorized request, refresh token is required"
+        );
+    }
+
+    try {
+        const decodedToken = jwt.verify(
+            incomingRefreshToken,
+            process.env.REFRESH_TOKEN_SECRET
+        );
+
+        const user = await User.findById(decodedToken?._id);
+
+        if (!user || user.refreshToken !== incomingRefreshToken) {
+            throw new ApiError(401, "Invalid refresh token");
+        }
+
+        const { accessToken, refreshToken } =
+            await generateAccessAndRefreshToken(user._id);
+
+        const options = {
+            httpOnly: true,
+            secure: true,
+        };
+
+        res.status(200)
+            .cookie("accessToken", accessToken, options)
+            .cookie("refreshToken", refreshToken, options)
+            .json(
+                new ApiResponse(
+                    200,
+                    "Access Token refreshed successfully",
+                    null // Do not send tokens in response body, only in cookies
+                )
+            );
+    } catch (error) {
+        throw new ApiError(
+            401,
+            error.message || "Unauthorized request, invalid refresh token"
+        );
+    }
+});
+
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    const user = await User.findById(req.user?._id);
+    const isPasswordCorrect = user.isPasswordCorrect(oldPassword);
+
+    if (isPasswordCorrect) {
+        throw new ApiError(400, "Old Password is Invalid");
+    }
+
+    user.password = newPassword;
+    await user.save({ validateBeforeSave: false });
+
+    return res
+        .status(200)
+        .json(new ApiResponse(200, "Password changed successfully", null));
+});
+
+export {
+    registerUser,
+    loginUser,
+    logoutUser,
+    refreshAccessToken,
+    changeCurrentPassword,
 };
