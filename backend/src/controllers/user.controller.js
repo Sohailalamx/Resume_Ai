@@ -21,6 +21,8 @@ const generateAccessAndRefreshToken = async (userId) => {
     }
 };
 
+
+// Register new user
 const registerUser = asyncHandler(async (req, res) => {
     // Extract user details from request body
     // Validate required fields => not empty, valid email format, etc.
@@ -67,6 +69,8 @@ const registerUser = asyncHandler(async (req, res) => {
         );
 });
 
+
+//login existing user
 const loginUser = asyncHandler(async (req, res) => {
     // get user details  req.body
     // username or email
@@ -126,6 +130,8 @@ const loginUser = asyncHandler(async (req, res) => {
         );
 });
 
+
+// logout logedin user
 const logoutUser = asyncHandler(async (req, res) => {
     // remove refresh token from database
     // clear cookies
@@ -222,6 +228,25 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
     return res
         .status(200)
         .json(new ApiResponse(200, "Password changed successfully", null));
+});
+
+
+// fetch history for a user
+const fetchHistory = asyncHandler(async (req, res) => {
+    const userId = req.user?._id;
+    if(!userId){
+        throw new ApiError(400, "User not found");
+    }
+
+    try {
+        const user = await User.findById(userId).select("history");
+        return res
+            .status(200)
+            .json(new ApiResponse(200, "History fetched successfully", user.history));
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Internal server error" });
+    }
 });
 
 export {

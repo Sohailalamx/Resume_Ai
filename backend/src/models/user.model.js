@@ -2,6 +2,28 @@ import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 
+const pdfSchema = new mongoose.Schema(
+    {
+        name: {
+            type: String,
+            required: true,
+            required: true,
+            default: "Resume"
+        },
+        link: {
+            type: String,
+            required: true,
+            unique: true
+        }
+    },
+    {
+        _id: false, // Disable automatic _id generation for subdocuments
+    },
+    {
+        timestamps: true,
+    }
+);
+
 const userSchema = new mongoose.Schema(
     {
         username:{
@@ -23,9 +45,7 @@ const userSchema = new mongoose.Schema(
             required: true
         },
         history: [
-            {
-                type: String
-            }
+            pdfSchema
         ],
         refreshToken:{
             type: String
